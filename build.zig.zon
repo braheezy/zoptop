@@ -1,0 +1,7 @@
+.{
+    .name = .zoptop,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .fingerprint = 0x8abe09dc2412422d,
+}
