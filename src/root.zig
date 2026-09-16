@@ -4,6 +4,7 @@ pub const otpauth = @import("otpauth.zig");
 pub const Account = @import("Account.zig");
 const codes = @import("codes.zig");
 const Algorithm = @import("algorithm.zig").Algorithm;
+const format = @import("format.zig");
 
 const std = @import("std");
 const testing = std.testing;
@@ -71,4 +72,79 @@ test "core: URI settings reach all three algorithms" {
         defer account.deinit(testing.allocator);
         try expectCode(account, 59, code);
     }
+}
+
+const one_account_bytes = "ZOTP\x00\x01\x00\x00\x00\x01" ++
+    "\x01\x06\x00\x00\x00\x1e" ++
+    "\x00\x00\x00\x00" ++
+    "\x00\x00\x00\x01a" ++
+    "\x00\x00\x00\x01f";
+
+fn expectSameAccount(a: Account, b: Account) !void {
+    try testing.expectEqualStrings(a.issuer, b.issuer);
+    try testing.expectEqualStrings(a.name, b.name);
+    try testing.expectEqualSlices(u8, a.secret, b.secret);
+    try testing.expectEqual(a.algorithm, b.algorithm);
+    try testing.expectEqual(a.digits, b.digits);
+    try testing.expectEqual(a.period, b.period);
+}
+
+fn expectBadFormat(bytes: []const u8, expected: anyerror) !void {
+    if (format.decode(testing.allocator, bytes)) |db| {
+        db.deinit(testing.allocator);
+        return error.TestUnexpectedSuccess;
+    } else |err| try testing.expectEqual(expected, err);
+}
+
+test "format: known bytes and empty database" {
+    const a = try otpauth.parse(testing.allocator, "otpauth://totp/a?secret=MY");
+    defer a.deinit(testing.allocator);
+    const bytes = try format.encode(testing.allocator, &.{a});
+    defer testing.allocator.free(bytes);
+    try testing.expectEqualSlices(u8, one_account_bytes, bytes);
+    const db = try format.decode(testing.allocator, one_account_bytes);
+    defer db.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 1), db.accounts.len);
+    try expectSameAccount(a, db.accounts[0]);
+    const empty = try format.encode(testing.allocator, &.{});
+    defer testing.allocator.free(empty);
+    try testing.expectEqualSlices(u8, "ZOTP\x00\x01\x00\x00\x00\x00", empty);
+    const empty_db = try format.decode(testing.allocator, empty);
+    defer empty_db.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 0), empty_db.accounts.len);
+}
+
+test "format: multiple accounts survive without the source bytes" {
+    const a = try otpauth.parse(testing.allocator, uri256);
+    defer a.deinit(testing.allocator);
+    const b = try otpauth.parse(testing.allocator, "otpauth://totp/caf%C3%A9?secret=MY&period=60");
+    defer b.deinit(testing.allocator);
+    const bytes = try format.encode(testing.allocator, &.{ a, b });
+    defer testing.allocator.free(bytes);
+    const db = try format.decode(testing.allocator, bytes);
+    defer db.deinit(testing.allocator);
+    @memset(bytes, 0); // Decoded accounts must have their own copies.
+    try testing.expectEqual(@as(usize, 2), db.accounts.len);
+    try expectSameAccount(a, db.accounts[0]);
+    try expectSameAccount(b, db.accounts[1]);
+    try expectCode(db.accounts[0], 59, "46119246");
+}
+
+test "format: rejects truncation and invalid fields" {
+    for (0..one_account_bytes.len) |len| {
+        try expectBadFormat(one_account_bytes[0..len], error.InvalidFormat);
+    }
+    try expectBadFormat(one_account_bytes ++ "x", error.InvalidFormat);
+    var changed = one_account_bytes.*;
+    changed[5] = 2;
+    try expectBadFormat(&changed, error.UnsupportedVersion);
+    changed = one_account_bytes.*;
+    changed[10] = 255; // Unknown algorithm.
+    try expectBadFormat(&changed, error.InvalidFormat);
+    changed = one_account_bytes.*;
+    changed[11] = 7;
+    try expectBadFormat(&changed, error.InvalidFormat);
+    changed = one_account_bytes.*;
+    @memset(changed[16..20], 255); // Impossible issuer length.
+    try expectBadFormat(&changed, error.InvalidFormat);
 }

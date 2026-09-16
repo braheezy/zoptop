@@ -6,7 +6,7 @@ const Algorithm = @import("algorithm.zig").Algorithm;
 pub const Account = @This();
 issuer: []const u8,
 name: []const u8,
-secret: []u8,
+secret: []const u8,
 digits: u8 = 6,
 period: u32 = 30,
 algorithm: Algorithm = .sha1,
