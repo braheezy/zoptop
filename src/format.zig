@@ -59,6 +59,7 @@ pub fn encode(al: std.mem.Allocator, accounts: []const Account) ![]u8 {
         output[i] = buf[0];
         i += 1;
 
+        if (account.period == 0) return error.InvalidAccount;
         std.mem.writeInt(u32, &buf, account.period, .big);
         @memcpy(output[i .. i + 4], &buf);
         i += 4;

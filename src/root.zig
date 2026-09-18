@@ -6,6 +6,7 @@ const codes = @import("codes.zig");
 const Algorithm = @import("algorithm.zig").Algorithm;
 const format = @import("format.zig");
 const vault = @import("vault.zig");
+const store = @import("store.zig");
 
 const std = @import("std");
 const testing = std.testing;
@@ -206,4 +207,51 @@ fn wholeMemoryFlow(allocator: std.mem.Allocator) anyerror!void {
 
 test "vault: import encrypt reopen and generate, including allocation failures" {
     try testing.checkAllAllocationFailures(testing.allocator, wholeMemoryFlow, .{});
+}
+
+test "store: import three accounts, save, reopen, generate, replace" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const a = try otpauth.parse(testing.allocator, uri1);
+    defer a.deinit(testing.allocator);
+    const b = try otpauth.parse(testing.allocator, uri256);
+    defer b.deinit(testing.allocator);
+    const c = try otpauth.parse(testing.allocator, uri512);
+    defer c.deinit(testing.allocator);
+    try store.save(testing.allocator, testing.io, tmp.dir, "accounts", "password", &.{ a, b, c }, cheap);
+    const db = try store.load(testing.allocator, testing.io, tmp.dir, "accounts", "password");
+    defer db.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 3), db.accounts.len);
+    try expectSameAccount(a, db.accounts[0]);
+    try expectSameAccount(b, db.accounts[1]);
+    try expectSameAccount(c, db.accounts[2]);
+    try expectCode(db.accounts[0], 59, "94287082");
+    try expectCode(db.accounts[1], 59, "46119246");
+    try expectCode(db.accounts[2], 59, "90693936");
+    if (store.load(testing.allocator, testing.io, tmp.dir, "accounts", "wrong")) |unexpected| {
+        unexpected.deinit(testing.allocator);
+        return error.TestUnexpectedSuccess;
+    } else |err| try testing.expectEqual(error.AuthenticationFailed, err);
+    // Replacing with an empty database is a valid save.
+    try store.save(testing.allocator, testing.io, tmp.dir, "accounts", "password", &.{}, cheap);
+    const empty = try store.load(testing.allocator, testing.io, tmp.dir, "accounts", "password");
+    defer empty.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 0), empty.accounts.len);
+}
+
+test "store: rejected save preserves the previous file byte for byte" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const account = try otpauth.parse(testing.allocator, uri1);
+    defer account.deinit(testing.allocator);
+    try store.save(testing.allocator, testing.io, tmp.dir, "accounts", "password", &.{account}, cheap);
+    const before = try tmp.dir.readFileAlloc(testing.io, "accounts", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(before);
+    // Borrow the original allocations for this call; don't deinit bad separately.
+    var bad = account;
+    bad.period = 0;
+    try testing.expectError(error.InvalidAccount, store.save(testing.allocator, testing.io, tmp.dir, "accounts", "password", &.{bad}, cheap));
+    const after = try tmp.dir.readFileAlloc(testing.io, "accounts", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(after);
+    try testing.expectEqualSlices(u8, before, after);
 }
