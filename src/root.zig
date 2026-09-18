@@ -5,6 +5,7 @@ pub const Account = @import("Account.zig");
 const codes = @import("codes.zig");
 const Algorithm = @import("algorithm.zig").Algorithm;
 const format = @import("format.zig");
+const vault = @import("vault.zig");
 
 const std = @import("std");
 const testing = std.testing;
@@ -147,4 +148,62 @@ test "format: rejects truncation and invalid fields" {
     changed = one_account_bytes.*;
     @memset(changed[16..20], 255); // Impossible issuer length.
     try expectBadFormat(&changed, error.InvalidFormat);
+}
+
+const cheap = vault.SealOptions{ .params = .{ .t = 1, .m = 32, .p = 1 } };
+
+fn expectVaultError(bytes: []const u8, password: []const u8, expected: anyerror) !void {
+    if (vault.open(testing.allocator, testing.io, password, bytes)) |plain| {
+        defer testing.allocator.free(plain);
+        return error.TestUnexpectedSuccess;
+    } else |err| try testing.expectEqual(expected, err);
+}
+
+test "vault: password, random salt and nonce, and authentication" {
+    const encrypted = try vault.seal(testing.allocator, testing.io, "test password", "hello", cheap);
+    defer testing.allocator.free(encrypted);
+    const another = try vault.seal(testing.allocator, testing.io, "test password", "hello", cheap);
+    defer testing.allocator.free(another);
+    try testing.expectEqual(@as(usize, 85), encrypted.len);
+    try testing.expect(!std.mem.eql(u8, encrypted[20..36], another[20..36]));
+    try testing.expect(!std.mem.eql(u8, encrypted[36..60], another[36..60]));
+    const plain = try vault.open(testing.allocator, testing.io, "test password", encrypted);
+    defer testing.allocator.free(plain);
+    try testing.expectEqualStrings("hello", plain);
+    try expectVaultError(encrypted, "wrong password", error.AuthenticationFailed);
+    for ([_]usize{ 20, 36, 64, encrypted.len - 1 }) |index| {
+        encrypted[index] ^= 1; // Salt, nonce, ciphertext, then tag.
+        try expectVaultError(encrypted, "test password", error.AuthenticationFailed);
+        encrypted[index] ^= 1;
+    }
+    for (0..encrypted.len) |len| {
+        try expectVaultError(encrypted[0..len], "test password", error.InvalidVault);
+    }
+    encrypted[4] = 2;
+    try expectVaultError(encrypted, "test password", error.UnsupportedVersion);
+    encrypted[4] = 1;
+    @memset(encrypted[12..16], 255);
+    try expectVaultError(encrypted, "test password", error.InvalidKdfParameters);
+}
+
+fn wholeMemoryFlow(allocator: std.mem.Allocator) anyerror!void {
+    const account = try otpauth.parse(allocator, uri1);
+    defer account.deinit(allocator);
+    const second = try otpauth.parse(allocator, uri256);
+    defer second.deinit(allocator);
+    const bytes = try format.encode(allocator, &.{ account, second });
+    defer allocator.free(bytes);
+    const encrypted = try vault.seal(allocator, testing.io, "test password", bytes, cheap);
+    defer allocator.free(encrypted);
+    const plain = try vault.open(allocator, testing.io, "test password", encrypted);
+    defer allocator.free(plain);
+    const db = try format.decode(allocator, plain);
+    defer db.deinit(allocator);
+    try testing.expectEqual(@as(usize, 2), db.accounts.len);
+    try expectCode(db.accounts[0], 1111111109, "07081804");
+    try expectCode(db.accounts[1], 59, "46119246");
+}
+
+test "vault: import encrypt reopen and generate, including allocation failures" {
+    try testing.checkAllAllocationFailures(testing.allocator, wholeMemoryFlow, .{});
 }

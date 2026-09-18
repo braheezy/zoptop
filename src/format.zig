@@ -100,7 +100,12 @@ pub fn decode(al: std.mem.Allocator, bytes: []const u8) !Database {
     i += 4;
 
     var accounts: std.ArrayList(Account) = try .initCapacity(al, account_count);
-    errdefer accounts.deinit(al);
+    errdefer {
+        for (accounts.items) |account| {
+            account.deinit(al);
+        }
+        accounts.deinit(al);
+    }
 
     while (account_count > 0) : (account_count -= 1) {
         if (i >= bytes.len) return error.InvalidFormat;
