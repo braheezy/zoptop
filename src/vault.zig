@@ -7,7 +7,7 @@ pub fn seal(
     plaintext: []const u8,
     options: SealOptions,
 ) ![]u8 {
-    if (plaintext.len > 4 * 1024 * 1024) return error.InvalidFormat;
+    if (plaintext.len > 4 * 1024 * 1024) return error.InvalidVault;
     if (options.params.t < 1 or options.params.t > 10) return error.InvalidKdfParameters;
     if (options.params.p < 1 or options.params.p > 4) return error.InvalidKdfParameters;
     if (options.params.m < 8 * options.params.p or options.params.m > 262144) return error.InvalidKdfParameters;
@@ -91,10 +91,9 @@ pub fn open(
     password: []const u8,
     encrypted: []const u8,
 ) ![]u8 {
-    if (encrypted.len < 80) return error.InvalidVault;
-    if (!std.mem.eql(u8, encrypted[0..4], "ZVLT")) return error.InvalidFormat;
     if (encrypted.len < 80 or encrypted.len > 4 * 1024 * 1024 + 80)
         return error.InvalidVault;
+    if (!std.mem.eql(u8, encrypted[0..4], "ZVLT")) return error.InvalidVault;
 
     const tag_start = encrypted.len - 16;
     const ciphertext = encrypted[64..tag_start];
@@ -106,20 +105,20 @@ pub fn open(
     i += 1;
 
     const crypto = header[i];
-    if (crypto != 1) return error.UnsupportedVersion;
+    if (crypto != 1) return error.InvalidVault;
     i += 1;
 
     const argon2_version = header[i];
-    if (argon2_version != 0x13) return error.UnsupportedVersion;
+    if (argon2_version != 0x13) return error.InvalidVault;
     i += 1;
 
     const reserved_version = header[i];
-    if (reserved_version != 0) return error.UnsupportedVersion;
+    if (reserved_version != 0) return error.InvalidVault;
     i += 1;
 
     const t = std.mem.readInt(u32, header[i..][0..4], .big);
     i += 4;
-    if (t > 10 or t < 1) return error.InvalidFormat;
+    if (t > 10 or t < 1) return error.InvalidKdfParameters;
 
     const m = std.mem.readInt(u32, header[i..][0..4], .big);
     i += 4;
@@ -138,6 +137,7 @@ pub fn open(
 
     const plaintext_len = std.mem.readInt(u32, header[i..][0..4], .big);
     i += 4;
+    if (plaintext_len != ciphertext.len) return error.InvalidVault;
 
     const plaintext = try al.alloc(u8, ciphertext.len);
     errdefer {
@@ -160,7 +160,6 @@ pub fn open(
         .argon2id,
         io,
     );
-    if (plaintext.len != plaintext_len) return error.InvalidVault;
 
     try std.crypto.aead.chacha_poly.XChaCha20Poly1305.decrypt(
         plaintext,
@@ -252,4 +251,28 @@ test "vault: open reads independent Argon2id and libsodium bytes" {
         testing.allocator.free(plaintext);
     }
     try testing.expectEqualSlices(u8, TestFixture.plaintext, plaintext);
+}
+
+test "vault: rejects malformed headers before allocating" {
+    const testing = std.testing;
+    const cases = [_]struct { offset: usize, value: u8, expected: anyerror }{
+        .{ .offset = 0, .value = 'X', .expected = error.InvalidVault },
+        .{ .offset = 4, .value = 2, .expected = error.UnsupportedVersion },
+        .{ .offset = 5, .value = 2, .expected = error.InvalidVault },
+        .{ .offset = 6, .value = 0, .expected = error.InvalidVault },
+        .{ .offset = 7, .value = 1, .expected = error.InvalidVault },
+        .{ .offset = 11, .value = 0, .expected = error.InvalidKdfParameters },
+        .{ .offset = 11, .value = 11, .expected = error.InvalidKdfParameters },
+        .{ .offset = 63, .value = 14, .expected = error.InvalidVault },
+        .{ .offset = 63, .value = 16, .expected = error.InvalidVault },
+    };
+    for (cases) |case| {
+        errdefer std.debug.print("header offset={d}, value={d}\n", .{ case.offset, case.value });
+        var bytes = try TestFixture.bytes();
+        bytes[case.offset] = case.value;
+        // Any allocation (including Argon2's workspace) would fail this test.
+        var failing = testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
+        try testing.expectError(case.expected, open(failing.allocator(), testing.io, TestFixture.password, &bytes));
+        try testing.expect(!failing.has_induced_failure);
+    }
 }
