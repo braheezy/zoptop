@@ -1,7 +1,14 @@
 .{
     .name = .zoptop,
     .version = "0.0.1",
+    .dependencies = .{
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis.git#f37c42a3b324131c131d066767968e1f5b976453",
+            .hash = "vaxis-0.6.0-BWNV_AIQDADLTDo5jCn27pBWJBvi-sTrSkSKwITQWgUV",
+            .lazy = true,
+        },
+    },
     .minimum_zig_version = "0.16.0",
-    .paths = .{""},
+    .paths = .{"src/"},
     .fingerprint = 0x8abe09dc2412422d,
 }

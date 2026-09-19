@@ -20,6 +20,12 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    if (b.lazyDependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    })) |vaxis_dep| {
+        exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+    }
 
     b.installArtifact(exe);
     const run_step = b.step("run", "Run the app");
