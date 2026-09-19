@@ -1,12 +1,12 @@
-pub const hotp = @import("hotp.zig");
-pub const Totp = @import("totp.zig").Totp;
-pub const otpauth = @import("otpauth.zig");
-pub const Account = @import("Account.zig");
-const codes = @import("codes.zig");
-const Algorithm = @import("algorithm.zig").Algorithm;
-const format = @import("format.zig");
-const vault = @import("vault.zig");
-const store = @import("store.zig");
+pub const hotp = @import("lib/hotp.zig");
+pub const Totp = @import("lib/totp.zig").Totp;
+pub const otpauth = @import("lib/otpauth.zig");
+pub const Account = @import("lib/Account.zig");
+const codes = @import("lib/codes.zig");
+const Algorithm = @import("lib/algorithm.zig").Algorithm;
+const format = @import("lib/format.zig");
+const vault = @import("lib/vault.zig");
+const store = @import("lib/store.zig");
 
 const std = @import("std");
 const testing = std.testing;
