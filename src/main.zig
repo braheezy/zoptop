@@ -2,8 +2,12 @@ const std = @import("std");
 const tui = @import("tui.zig");
 
 pub fn main(init: std.process.Init) !void {
-    const arena: std.mem.Allocator = init.arena.allocator();
+    const gpa: std.mem.Allocator = init.gpa;
     const io = init.io;
 
-    try tui.run(arena, io, init.environ_map);
+    try tui.run(gpa, io, init.environ_map);
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

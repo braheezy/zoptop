@@ -1,6 +1,10 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const widgets = vaxis.widgets;
+const totp = @import("totp");
+const draw = @import("ui/draw.zig");
+const Layout = @import("ui/layout.zig");
+const Navigation = @import("ui/navigation.zig").Navigation;
 
 pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !void {
     // Initialize a tty
@@ -11,6 +15,13 @@ pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !vo
     // Initialize Vaxis
     var vx = try vaxis.init(io, al, env, .{});
     defer vx.deinit(al, tty.writer());
+
+    const fixture_accounts = [_]totp.Account{
+        .{ .issuer = "Example", .name = "alice@example.com", .secret = "12345678901234567890" },
+        .{ .issuer = "Work", .name = "alice", .secret = "12345678901234567890", .digits = 8 },
+        .{ .issuer = "Other", .name = "café", .secret = "12345678901234567890", .period = 60 },
+    };
+    const fixture_results = [_]usize{ 0, 1, 2 };
 
     // Start the read loop. This puts the terminal in raw mode and begins reading user input
     var loop: vaxis.Loop(Event) = .init(io, &tty, &vx);
@@ -24,15 +35,14 @@ pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !vo
     // Sends queries to terminal to detect certain features
     try vx.queryTerminal(tty.writer(), .fromSeconds(1));
 
-    var text_view = widgets.TextView{};
-    var text_view_buffer = widgets.TextView.Buffer{};
-    defer text_view_buffer.deinit(al);
-    try text_view_buffer.append(al, .{ .bytes = "'q' to close" });
-
     var status_text_view = widgets.TextView{};
     var status_text_view_buffer = widgets.TextView.Buffer{};
     defer status_text_view_buffer.deinit(al);
     var has_error_msg = false;
+
+    var nav: Navigation = .{};
+
+    const normal_style: vaxis.Style = .{};
 
     while (true) {
         // nextEvent blocks until an event is in the queue
@@ -61,21 +71,38 @@ pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !vo
 
         const win = vx.window();
         win.clear();
+        win.hideCursor();
 
-        text_view.draw(win, text_view_buffer);
-        if (has_error_msg and win.height > 0) {
-            const status_win = win.child(.{
-                .x_off = 0,
-                .y_off = win.height - 1,
-                .width = win.width,
-                .height = 1,
-            });
-            status_text_view.draw(status_win, status_text_view_buffer);
+        const layout = Layout.calculate(win.width, win.height);
+        if (layout) |lay| {
+            nav.normalize(fixture_results.len, lay.list.height);
+
+            const title_win = draw.subwindow(win, lay.title);
+            draw.line(title_win, "zoptop", normal_style);
+
+            const list_win = draw.subwindow(win, lay.list);
+            draw.drawAccountList(list_win, &fixture_accounts, &fixture_results, nav);
+
+            const help_win = draw.subwindow(win, lay.help);
+            draw.line(help_win, "j/k: move  q: quit", normal_style);
+
+            if (has_error_msg and win.height > 0) {
+                const status_win = win.child(.{
+                    .x_off = 0,
+                    .y_off = win.height - 1,
+                    .width = win.width,
+                    .height = 1,
+                });
+                status_text_view.draw(status_win, status_text_view_buffer);
+            }
+        } else {
+            draw.line(win, "Make the terminal larger", normal_style);
         }
 
         // Render the screen. Using a buffered writer will offer much better
         // performance, but is not required
         try vx.render(tty.writer());
+        try tty.writer().flush();
     }
 }
 
