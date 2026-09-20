@@ -1,8 +1,10 @@
+const std = @import("std");
 const vaxis = @import("vaxis");
 const widgets = vaxis.widgets;
 const layout = @import("layout.zig");
 const Navigation = @import("navigation.zig").Navigation;
 const totp = @import("totp");
+const rows = @import("rows.zig");
 
 pub fn subwindow(parent: vaxis.Window, rect: layout.Rect) vaxis.Window {
     return parent.child(.{
@@ -41,11 +43,13 @@ pub fn drawAccountRow(
 }
 
 pub fn drawAccountList(
+    al: std.mem.Allocator,
     win: vaxis.Window,
     accounts: []const totp.Account,
     results: []const usize,
     nav: Navigation,
-) void {
+    timestamp: i64,
+) !void {
     if (accounts.len == 0) {
         line(win, "No accounts yet. Press a to add one.", .{});
         return;
@@ -59,8 +63,18 @@ pub fn drawAccountList(
     const visible = @min(available, win.height);
     for (0..visible) |screen_row| {
         const result_index = nav.first_visible + screen_row;
-        const accounut_index = results[result_index];
+        const account_index = results[result_index];
         const row_window = win.child(.{ .y_off = @intCast(screen_row), .width = win.width, .height = 1 });
-        drawAccountRow(row_window, accounts[accounut_index], "000000", "30s", nav.selected orelse 0 == result_index);
+
+        const account = accounts[account_index];
+
+        if (rows.build(account, timestamp)) |text| {
+            const code = try al.dupe(u8, text.code[0..text.code_len]);
+            const remaining = try al.dupe(u8, text.remaining[0..text.remaining_len]);
+
+            drawAccountRow(row_window, account, code, remaining, nav.selected == result_index);
+        } else |_| {
+            drawAccountRow(row_window, account, "ERROR", "", nav.selected == result_index);
+        }
     }
 }
