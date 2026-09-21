@@ -6,13 +6,18 @@ pub const Status = struct {
     kind: Kind = .info,
 
     pub fn set(self: *Status, text: []const u8, kind: Kind) !void {
-        if (text.len > 256) return error.MessageTooLong;
+        if (text.len > self.bytes.len) return error.MessageTooLong;
         @memcpy(self.bytes[0..text.len], text);
+        if (text.len < self.used) {
+            @memset(self.bytes[text.len..self.used], 0);
+        }
         self.used = text.len;
         self.kind = kind;
     }
     pub fn clear(self: *Status) void {
+        @memset(&self.bytes, 0);
         self.used = 0;
+        self.kind = .info;
     }
     pub fn slice(self: *const Status) []const u8 {
         return self.bytes[0..self.used];

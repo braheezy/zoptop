@@ -42,6 +42,11 @@ pub const Navigation = struct {
 
         self.normalize(count, visible_rows);
     }
+
+    pub fn clear(self: *Navigation) void {
+        self.selected = null;
+        self.first_visible = 0;
+    }
 };
 
 const testing = @import("std").testing;

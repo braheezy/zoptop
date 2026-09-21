@@ -48,14 +48,11 @@ pub fn run(
     // Sends queries to terminal to detect certain features
     try vx.queryTerminal(tty.writer(), .fromSeconds(1));
 
-    var status_text_view = widgets.TextView{};
-    var status_text_view_buffer = widgets.TextView.Buffer{};
-    defer status_text_view_buffer.deinit(al);
-    var has_error_msg = false;
     var dirty = true;
     var last_second: ?i64 = null;
 
-    var app = App.init(io, dir);
+    var app = try App.init(al, io, dir);
+    defer app.deinit(al);
 
     const normal_style: vaxis.Style = .{};
 
@@ -98,7 +95,7 @@ pub fn run(
 
             const layout = Layout.calculate(win.width, win.height);
             if (layout) |lay| {
-                nav.normalize(fixture_results.len, lay.list.height);
+                app.nav.normalize(fixture_results.len, lay.list.height);
 
                 const title_win = draw.subwindow(win, lay.title);
                 draw.line(title_win, "zoptop", normal_style);
@@ -109,22 +106,12 @@ pub fn run(
                     list_win,
                     &fixture_accounts,
                     &fixture_results,
-                    nav,
+                    app.nav,
                     now,
                 );
 
                 const help_win = draw.subwindow(win, lay.help);
                 draw.line(help_win, "j/k: move  q: quit", normal_style);
-
-                if (has_error_msg and win.height > 0) {
-                    const status_win = win.child(.{
-                        .x_off = 0,
-                        .y_off = win.height - 1,
-                        .width = win.width,
-                        .height = 1,
-                    });
-                    status_text_view.draw(status_win, status_text_view_buffer);
-                }
             } else {
                 draw.line(win, "Make the terminal larger", normal_style);
             }

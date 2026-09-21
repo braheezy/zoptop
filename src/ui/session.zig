@@ -2,7 +2,7 @@ const std = @import("std");
 const totp = @import("totp");
 const SecretInput = @import("sercret_input.zig").SecretInput;
 
-const filename = "accounts";
+pub const filename = "accounts";
 
 pub const Session = @This();
 
@@ -36,9 +36,28 @@ pub fn unlock(
     io: std.Io,
     password: []const u8,
 ) !void {
-    const loaded = try totp.store.load(al, io, self.dir, filename, password);
-    try self.password.append(password);
-    self.database = loaded;
+    if (password.len == 0)
+        return error.EmptyPassword;
+
+    if (password.len > self.password.bytes.len)
+        return error.InputTooLong;
+
+    if (self.database) |_| {
+        return error.AlreadyUnlocked;
+    } else {
+        if (password.len == 0) return error.EmptyPassword;
+        if (password.len > 1024) return error.InputTooLong;
+
+        const loaded = try totp.store.load(al, io, self.dir, filename, password);
+        errdefer loaded.deinit(al);
+
+        var new_password: SecretInput(1024) = .{};
+        try new_password.append(password);
+
+        self.password.clear();
+        self.password = new_password;
+        self.database = loaded;
+    }
 }
 
 pub fn create(
@@ -164,6 +183,70 @@ test "session refuses to create over an existing vault" {
     try testing.expectError(
         error.VaultAlreadyExists,
         session.create(testing.allocator, testing.io, "password", test_options),
+    );
+    try testing.expect(session.database == null);
+    try testing.expectEqualStrings("", session.password.slice());
+}
+
+test "session rejects a directory named accounts" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.createDir(testing.io, filename, .default_dir);
+
+    var session: Session = .{ .dir = tmp.dir };
+    try testing.expectError(error.IsDir, session.exists(testing.io));
+    try testing.expectError(
+        error.IsDir,
+        session.create(testing.allocator, testing.io, "password", test_options),
+    );
+    try testing.expect(session.database == null);
+    try testing.expectEqualStrings("", session.password.slice());
+}
+
+test "failed create leaves the session locked" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const invalid_options: totp.vault.SealOptions = .{ .params = .{ .t = 1, .m = 7, .p = 1 } };
+    var session: Session = .{ .dir = tmp.dir };
+    defer session.deinit(testing.allocator);
+
+    try testing.expectError(
+        error.InvalidKdfParameters,
+        session.create(testing.allocator, testing.io, "password", invalid_options),
+    );
+    try testing.expect(session.database == null);
+    try testing.expectEqualStrings("", session.password.slice());
+    try testing.expect(!(try session.exists(testing.io)));
+}
+
+test "empty unlock password leaves the session locked" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var session: Session = .{ .dir = tmp.dir };
+    defer session.deinit(testing.allocator);
+
+    try testing.expectError(
+        error.EmptyPassword,
+        session.unlock(testing.allocator, testing.io, ""),
+    );
+    try testing.expect(session.database == null);
+    try testing.expectEqualStrings("", session.password.slice());
+}
+
+test "oversized unlock password leaves the session locked" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var session: Session = .{ .dir = tmp.dir };
+    defer session.deinit(testing.allocator);
+
+    const oversized = [_]u8{'x'} ** 1025;
+    try testing.expectError(
+        error.InputTooLong,
+        session.unlock(testing.allocator, testing.io, &oversized),
     );
     try testing.expect(session.database == null);
     try testing.expectEqualStrings("", session.password.slice());
