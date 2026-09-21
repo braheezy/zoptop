@@ -21,6 +21,7 @@ pub const Screen = enum {
 };
 
 const normal_style: vaxis.Style = .{};
+pub const idle_timeout: i64 = 5 * 60;
 
 const App = @This();
 
@@ -37,6 +38,7 @@ confirmation_input: SecretInput(1024) = .{},
 uri_input: SecretInput(16384) = .{},
 search_input: SecretInput(256) = .{},
 seal_options: totp.vault.SealOptions = .{ .params = .{} },
+last_activity: i64 = 0,
 
 pub fn init(al: std.mem.Allocator, io: std.Io, dir: std.Io.Dir) !App {
     var session: Session = .{ .dir = dir };
@@ -171,6 +173,21 @@ pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
             draw.line(prompt_win, text, .{});
             draw.line(prompt_win, "Press Enter to delete, Escape to cancel", .{});
         },
+    }
+}
+
+pub fn lockOnIdle(self: *App, al: std.mem.Allocator, now: i64) !void {
+    if (self.screen == .accounts and now - self.last_activity >= idle_timeout) {
+        self.session.lock(al);
+        self.password_input.clear();
+        self.confirmation_input.clear();
+        self.uri_input.clear();
+        self.search_input.clear();
+        self.results.clearRetainingCapacity();
+        self.nav.clear();
+        self.screen = .unlock;
+        try self.status.set("Locked due to inactivity", .info);
+        self.dirty = true;
     }
 }
 

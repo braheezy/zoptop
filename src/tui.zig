@@ -80,6 +80,8 @@ pub fn run(
             dirty = true;
         }
 
+        try app.lockOnIdle(al, now);
+
         if (dirty) {
             const win = vx.window();
             win.clear();
