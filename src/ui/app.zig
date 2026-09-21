@@ -459,7 +459,10 @@ fn handleAddUriKey(
 
     if (!key.matches(vaxis.Key.enter, .{})) return;
 
-    const new_account = try totp.otpauth.parse(al, self.uri_input.slice());
+    const new_account = totp.otpauth.parse(al, self.uri_input.slice()) catch |err| {
+        try self.showErrorFor(err);
+        return;
+    };
     defer new_account.deinit(al);
 
     var temp_accounts = try cloneAccountsWithExtra(
@@ -467,9 +470,9 @@ fn handleAddUriKey(
         self.session.accounts(),
         new_account,
     );
-    errdefer temp_accounts.deinit(al);
+    errdefer deinitAccountList(al, &temp_accounts);
 
-    try totp.store.save(
+    totp.store.save(
         al,
         io,
         self.session.dir,
@@ -477,7 +480,11 @@ fn handleAddUriKey(
         self.session.password.slice(),
         temp_accounts.items,
         self.seal_options,
-    );
+    ) catch |err| {
+        deinitAccountList(al, &temp_accounts);
+        try self.showErrorFor(err);
+        return;
+    };
 
     const replacement = try temp_accounts.toOwnedSlice(al);
     replaceDatabase(self, al, replacement);
@@ -656,6 +663,22 @@ fn showErrorFor(self: *App, err: anyerror) !void {
     try self.showError(message);
 }
 
+fn lockIfIdle(self: *App, al: std.mem.Allocator, now: i64) void {
+    if (self.screen != .accounts) return;
+    if (now - self.last_activity < idle_timeout) return;
+
+    self.session.lock(al);
+    self.password_input.clear();
+    self.confirmation_input.clear();
+    self.uri_input.clear();
+    self.search_input.clear();
+    self.results.clearRetainingCapacity();
+    self.nav.clear();
+    self.screen = .unlock;
+    self.status.set("Locked due to inactivity", .info) catch {};
+    self.dirty = true;
+}
+
 const testing = std.testing;
 const test_seal_options: totp.vault.SealOptions = .{ .params = .{ .t = 1, .m = 32, .p = 1 } };
 const test_visible_rows = 5;
@@ -817,4 +840,164 @@ test "app lock clears state and permits a later unlock" {
     try press(&app, .{ .codepoint = vaxis.Key.enter });
     try testing.expectEqual(Screen.accounts, app.screen);
     try testing.expect(app.session.database != null);
+}
+
+fn createTestAccount(issuer: []const u8, name: []const u8, secret: []const u8) !totp.Account {
+    return .{
+        .issuer = try testing.allocator.dupe(u8, issuer),
+        .name = try testing.allocator.dupe(u8, name),
+        .secret = try testing.allocator.dupe(u8, secret),
+    };
+}
+
+fn createTestVaultWithAccounts(dir: std.Io.Dir, password: []const u8) !void {
+    var accounts = [_]totp.Account{
+        try createTestAccount("Google", "alice@example.com", "JBSWY3DPEHPK3PXP"),
+        try createTestAccount("GitHub", "bob@example.com", "KRUGS4ZANFZSAYJA"),
+    };
+    defer for (&accounts) |*account| account.deinit(testing.allocator);
+
+    try totp.store.save(
+        testing.allocator,
+        testing.io,
+        dir,
+        Session.filename,
+        password,
+        accounts[0..],
+        test_seal_options,
+    );
+}
+
+fn unlockTestAppWithAccounts(tmp: *testing.TmpDir) !App {
+    try createTestVaultWithAccounts(tmp.dir, "pass");
+    var app = try initializeTestApp(tmp.dir);
+    try typeText(&app, "pass");
+    try press(&app, .{ .codepoint = vaxis.Key.enter });
+    return app;
+}
+
+test "app search filters issuer and name and escape restores all results" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+
+    try press(&app, .{ .codepoint = '/' });
+    try typeText(&app, "Google");
+    try testing.expectEqual(Screen.search, app.screen);
+    try testing.expectEqualSlices(usize, &.{0}, app.results.items);
+
+    try press(&app, .{ .codepoint = vaxis.Key.escape });
+    try testing.expectEqual(Screen.accounts, app.screen);
+    try testing.expectEqualSlices(usize, &.{ 0, 1 }, app.results.items);
+}
+
+test "invalid URI leaves the existing database unchanged" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+    const before = app.session.accounts().len;
+
+    try press(&app, .{ .codepoint = 'a' });
+    try typeText(&app, "not-a-uri");
+    try press(&app, .{ .codepoint = vaxis.Key.enter });
+
+    try testing.expectEqual(Screen.add_uri, app.screen);
+    try testing.expectEqualStrings("Invalid URI", app.status.slice());
+    try testing.expectEqual(before, app.session.accounts().len);
+}
+
+test "failed URI save leaves the existing database unchanged" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+    const before = app.session.accounts().len;
+    app.seal_options = .{ .params = .{ .t = 1, .m = 7, .p = 1 } };
+
+    try press(&app, .{ .codepoint = 'a' });
+    try typeText(&app, "otpauth://totp/AWS:alice?secret=JBSWY3DPEHPK3PXP");
+    try press(&app, .{ .codepoint = vaxis.Key.enter });
+
+    try testing.expectEqual(Screen.add_uri, app.screen);
+    try testing.expectEqual(before, app.session.accounts().len);
+    try testing.expectEqualStrings("Operation failed", app.status.slice());
+}
+
+test "delete confirmation escape leaves the database unchanged" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+    app.nav.selected = 0;
+    app.screen = .confirm_delete;
+
+    try press(&app, .{ .codepoint = vaxis.Key.escape });
+    try testing.expectEqual(Screen.accounts, app.screen);
+    try testing.expectEqual(@as(usize, 2), app.session.accounts().len);
+}
+
+test "successful deletion removes exactly the selected account" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+    app.nav.selected = 1;
+    app.screen = .confirm_delete;
+
+    try press(&app, .{ .codepoint = vaxis.Key.enter });
+    try testing.expectEqual(Screen.accounts, app.screen);
+    try testing.expectEqual(@as(usize, 1), app.session.accounts().len);
+    try testing.expectEqualStrings("alice@example.com", app.session.accounts()[0].name);
+}
+
+test "deleting the last account clears selection" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try initializeTestApp(tmp.dir);
+    defer app.deinit(testing.allocator);
+    try app.session.create(testing.allocator, testing.io, "pass", test_seal_options);
+    const account = try createTestAccount("Google", "alice@example.com", "JBSWY3DPEHPK3PXP");
+    const replacement = try testing.allocator.alloc(totp.Account, 1);
+    replacement[0] = account;
+    if (app.session.database) |old| old.deinit(testing.allocator);
+    app.session.database = .{ .accounts = replacement };
+    try filter.rebuild(testing.allocator, &app.results, app.session.accounts(), "");
+    app.nav.normalize(app.results.items.len, test_visible_rows);
+    app.nav.selected = 0;
+    app.screen = .confirm_delete;
+
+    try press(&app, .{ .codepoint = vaxis.Key.enter });
+    try testing.expectEqual(@as(usize, 0), app.session.accounts().len);
+    try testing.expectEqual(@as(usize, 0), app.results.items.len);
+    try testing.expectEqual(@as(?usize, null), app.nav.selected);
+}
+
+test "idle locking clears the session and sensitive inputs" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+    try app.password_input.append("password");
+    try app.confirmation_input.append("confirmation");
+    try app.uri_input.append("uri");
+    try app.search_input.append("search");
+    app.last_activity = 0;
+
+    app.lockIfIdle(testing.allocator, App.idle_timeout);
+
+    try testing.expectEqual(Screen.unlock, app.screen);
+    try testing.expect(app.session.database == null);
+    try testing.expectEqual(@as(usize, 0), app.password_input.len);
+    try testing.expectEqual(@as(usize, 0), app.confirmation_input.len);
+    try testing.expectEqual(@as(usize, 0), app.uri_input.len);
+    try testing.expectEqual(@as(usize, 0), app.search_input.len);
 }
