@@ -7,6 +7,7 @@ const Layout = @import("ui/layout.zig");
 const Navigation = @import("ui/navigation.zig").Navigation;
 const rows = @import("ui/rows.zig");
 const App = @import("ui/app.zig");
+const Status = @import("ui/status.zig");
 
 const session = @import("ui/session.zig");
 
@@ -29,13 +30,6 @@ pub fn run(
     var vx = try vaxis.init(io, al, env, .{});
     defer vx.deinit(al, tty.writer());
 
-    const fixture_accounts = [_]totp.Account{
-        .{ .issuer = "Example", .name = "alice@example.com", .secret = "12345678901234567890" },
-        .{ .issuer = "Work", .name = "alice", .secret = "12345678901234567890", .digits = 8 },
-        .{ .issuer = "Other", .name = "café", .secret = "12345678901234567890", .period = 60 },
-    };
-    const fixture_results = [_]usize{ 0, 1, 2 };
-
     // Start the read loop. This puts the terminal in raw mode and begins reading user input
     var loop: vaxis.Loop(Event) = .init(io, &tty, &vx);
     try loop.installResizeHandler();
@@ -53,8 +47,6 @@ pub fn run(
 
     var app = try App.init(al, io, dir);
     defer app.deinit(al);
-
-    const normal_style: vaxis.Style = .{};
 
     main_loop: while (true) {
         for (0..64) |_| {
@@ -79,7 +71,7 @@ pub fn run(
                 .winsize => |ws| try vx.resize(al, tty.writer(), ws),
             }
 
-            dirty = true;
+            app.dirty = true;
         }
 
         const now = std.Io.Timestamp.now(io, .real).toSeconds();
@@ -93,29 +85,14 @@ pub fn run(
             win.clear();
             win.hideCursor();
 
-            const layout = Layout.calculate(win.width, win.height);
-            if (layout) |lay| {
-                app.nav.normalize(fixture_results.len, lay.list.height);
+            const layout = Layout.calculate(win.width, win.height) orelse {
+                draw.line(win, "Make the terminal larger", .{});
+                try vx.render(tty.writer());
+                try tty.writer().flush();
+                return;
+            };
 
-                const title_win = draw.subwindow(win, lay.title);
-                draw.line(title_win, "zoptop", normal_style);
-
-                const list_win = draw.subwindow(win, lay.list);
-                try draw.drawAccountList(
-                    arena,
-                    list_win,
-                    &fixture_accounts,
-                    &fixture_results,
-                    app.nav,
-                    now,
-                );
-
-                const help_win = draw.subwindow(win, lay.help);
-                draw.line(help_win, "j/k: move  q: quit", normal_style);
-            } else {
-                draw.line(win, "Make the terminal larger", normal_style);
-            }
-
+            try app.render(arena, layout, win, now);
             // Render the screen. Using a buffered writer will offer much better
             // performance, but is not required
             try vx.render(tty.writer());

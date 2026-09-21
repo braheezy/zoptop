@@ -3,9 +3,12 @@ const vaxis = @import("vaxis");
 const Navigation = @import("navigation.zig").Navigation;
 const Session = @import("session.zig");
 const Status = @import("status.zig").Status;
+const Kind = @import("status.zig").Kind;
 const SecretInput = @import("sercret_input.zig").SecretInput;
 const filter = @import("filter.zig");
 const totp = @import("totp");
+const draw = @import("draw.zig");
+const Layout = @import("layout.zig").Layout;
 
 pub const Screen = enum {
     unlock,
@@ -16,6 +19,8 @@ pub const Screen = enum {
     add_uri,
     confirm_delete,
 };
+
+const normal_style: vaxis.Style = .{};
 
 const App = @This();
 
@@ -83,6 +88,89 @@ pub fn handleKey(
         .add_uri => try self.handleAddUriKey(al, io, key, visible_rows),
 
         .confirm_delete => try self.handleConfirmDeleteKey(al, io, key, visible_rows),
+    }
+}
+
+pub fn render(
+    self: *App,
+    arena: std.mem.Allocator,
+    layout: Layout,
+    win: vaxis.Window,
+    now: i64,
+) !void {
+    const list_height: usize = @intCast(layout.list.height);
+    self.nav.normalize(self.results.items.len, list_height);
+
+    draw.line(draw.subwindow(win, layout.title), "zoptop", .{});
+    try draw.drawAccountList(
+        arena,
+        draw.subwindow(win, layout.list),
+        self.session.accounts(),
+        self.results.items,
+        self.nav,
+        now,
+    );
+
+    self.drawPrompt(draw.subwindow(win, layout.prompt));
+    // Draw the active help text in layout.help.
+    draw.line(draw.subwindow(win, layout.status), self.status.slice(), statusStyle(self.status.kind));
+
+    const help_win = draw.subwindow(win, layout.help);
+    draw.line(help_win, "j/k: move  q: quit", .{});
+}
+
+pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
+    switch (self.screen) {
+        .unlock => {
+            draw.line(prompt_win, "Unlock vault:", .{});
+
+            var mask: [1024]u8 = undefined;
+            @memset(mask[0..self.password_input.len], '*');
+
+            draw.line(prompt_win, mask[0..self.password_input.len], .{});
+        },
+        .create_password => {
+            draw.line(prompt_win, "Create password:", .{});
+
+            var mask: [1024]u8 = undefined;
+            @memset(mask[0..self.password_input.len], '*');
+
+            draw.line(prompt_win, mask[0..self.password_input.len], .{});
+        },
+        .create_confirm => {
+            draw.line(prompt_win, "Confirm password:", .{});
+
+            var mask: [1024]u8 = undefined;
+            @memset(mask[0..self.confirmation_input.len], '*');
+
+            draw.line(prompt_win, mask[0..self.confirmation_input.len], .{});
+        },
+        .accounts => {},
+        .search => {
+            draw.line(prompt_win, "Search:", .{});
+            draw.line(prompt_win, self.search_input.slice(), .{});
+        },
+        .add_uri => {
+            draw.line(prompt_win, "Add account URI:", .{});
+            draw.line(prompt_win, self.uri_input.slice(), .{});
+        },
+        .confirm_delete => {
+            const result_position = self.nav.selected orelse return;
+            const account_index = self.results.items[result_position];
+            const account = self.session.accounts()[account_index];
+
+            var text_buffer: [1024]u8 = undefined;
+
+            const text = std.fmt.bufPrint(
+                &text_buffer,
+                "Delete account? {s} / {s}",
+                .{ account.issuer, account.name },
+            ) catch return;
+
+            draw.line(prompt_win, "Delete account?", .{});
+            draw.line(prompt_win, text, .{});
+            draw.line(prompt_win, "Press Enter to delete, Escape to cancel", .{});
+        },
     }
 }
 
@@ -267,7 +355,10 @@ fn handleAccountsKey(
         return;
     }
     if (key.matches('c', .{})) {
-        self.status.set("Copy is unavailable", .info);
+        self.status.set("Copy is unavailable", .info) catch |err| {
+            try self.showErrorFor(err);
+            return;
+        };
         self.touch();
         return;
     }
@@ -415,10 +506,10 @@ fn handleConfirmDeleteKey(
             self.session.dir,
             Session.filename,
             self.session.password.slice(),
-            &temp_accounts,
+            temp_accounts.items,
             self.seal_options,
         ) catch |err| {
-            self.showErrorFor(err);
+            try self.showErrorFor(err);
             self.screen = .accounts;
             return;
         };
@@ -513,6 +604,15 @@ fn deinitAccountList(al: std.mem.Allocator, accounts: *std.ArrayList(totp.Accoun
     }
 
     accounts.deinit(al);
+}
+
+fn statusStyle(kind: Kind) vaxis.Style {
+    return switch (kind) {
+        .info => .{},
+        .err => .{
+            .fg = .{ .index = 1 },
+        },
+    };
 }
 
 fn touch(self: *App) void {
