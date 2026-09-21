@@ -5,7 +5,9 @@ pub fn main(init: std.process.Init) !void {
     const gpa: std.mem.Allocator = init.gpa;
     const io = init.io;
 
-    try tui.run(gpa, io, init.environ_map);
+    const dir = std.Io.Dir.cwd();
+
+    try tui.run(gpa, io, init.environ_map, dir);
 }
 
 test {

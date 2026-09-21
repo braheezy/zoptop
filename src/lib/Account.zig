@@ -14,6 +14,7 @@ algorithm: Algorithm = .sha1,
 pub fn deinit(self: Account, allocator: Allocator) void {
     allocator.free(self.issuer);
     allocator.free(self.name);
+    std.crypto.secureZero(u8, @constCast(self.secret));
     allocator.free(self.secret);
 }
 

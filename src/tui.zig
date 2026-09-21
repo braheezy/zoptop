@@ -6,8 +6,16 @@ const draw = @import("ui/draw.zig");
 const Layout = @import("ui/layout.zig");
 const Navigation = @import("ui/navigation.zig").Navigation;
 const rows = @import("ui/rows.zig");
+const App = @import("ui/app.zig");
 
-pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !void {
+const session = @import("ui/session.zig");
+
+pub fn run(
+    al: std.mem.Allocator,
+    io: std.Io,
+    env: *std.process.Environ.Map,
+    dir: std.Io.Dir,
+) !void {
     var ar = std.heap.ArenaAllocator.init(al);
     const arena = ar.allocator();
     defer ar.deinit();
@@ -47,7 +55,7 @@ pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !vo
     var dirty = true;
     var last_second: ?i64 = null;
 
-    var nav: Navigation = .{};
+    var app = App.init(io, dir);
 
     const normal_style: vaxis.Style = .{};
 
@@ -57,20 +65,18 @@ pub fn run(al: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map) !vo
 
             switch (event) {
                 .key_press => |key| {
-                    if (key.matches('q', .{})) {
+                    const list_height: usize = if (Layout.calculate(
+                        vx.window().width,
+                        vx.window().height,
+                    )) |current_layout|
+                        @intCast(current_layout.list.height)
+                    else
+                        0;
+
+                    try app.handleKey(al, io, key, list_height);
+
+                    if (app.quit)
                         break :main_loop;
-                    } else if (key.matches('e', .{})) {
-                        status_text_view_buffer.clear(al);
-                        try status_text_view_buffer.append(al, .{ .bytes = "sample error" });
-                        try status_text_view_buffer.updateStyle(al, .{
-                            .begin = 0,
-                            .end = status_text_view_buffer.content.items.len,
-                            .style = .{
-                                .fg = .{ .index = 3 },
-                            },
-                        });
-                        has_error_msg = true;
-                    }
                 },
 
                 .winsize => |ws| try vx.resize(al, tty.writer(), ws),
