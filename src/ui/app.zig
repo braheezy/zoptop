@@ -23,6 +23,11 @@ pub const Screen = enum {
 const normal_style: vaxis.Style = .{};
 pub const idle_timeout: i64 = 5 * 60;
 
+fn drawPasswordMask(win: vaxis.Window, row: u16, length: usize) void {
+    var mask = [_]u8{'*'} ** 1024;
+    draw.line(win.child(.{ .y_off = row, .width = win.width, .height = 1 }), mask[0..length], .{});
+}
+
 const App = @This();
 
 screen: Screen = .unlock,
@@ -122,30 +127,26 @@ pub fn render(
 }
 
 pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
+    prompt_win.fill((.{ .char = .{ .grapheme = " " }, .style = .{} }));
+
+    const line_window = struct {
+        fn get(win: vaxis.Window, row: u16) vaxis.Window {
+            return win.child(.{ .y_off = row, .width = win.width, .height = 1 });
+        }
+    }.get;
+
     switch (self.screen) {
         .unlock => {
-            draw.line(prompt_win, "Unlock vault:", .{});
-
-            var mask: [1024]u8 = undefined;
-            @memset(mask[0..self.password_input.len], '*');
-
-            draw.line(prompt_win, mask[0..self.password_input.len], .{});
+            draw.line(line_window(prompt_win, 0), "Unlock vault:", .{});
+            drawPasswordMask(prompt_win, 1, self.password_input.len);
         },
         .create_password => {
-            draw.line(prompt_win, "Create password:", .{});
-
-            var mask: [1024]u8 = undefined;
-            @memset(mask[0..self.password_input.len], '*');
-
-            draw.line(prompt_win, mask[0..self.password_input.len], .{});
+            draw.line(line_window(prompt_win, 0), "Create password:", .{});
+            drawPasswordMask(prompt_win, 1, self.password_input.len);
         },
         .create_confirm => {
-            draw.line(prompt_win, "Confirm password:", .{});
-
-            var mask: [1024]u8 = undefined;
-            @memset(mask[0..self.confirmation_input.len], '*');
-
-            draw.line(prompt_win, mask[0..self.confirmation_input.len], .{});
+            draw.line(line_window(prompt_win, 0), "Confirm password:", .{});
+            drawPasswordMask(prompt_win, 1, self.confirmation_input.len);
         },
         .accounts => {},
         .search => {
