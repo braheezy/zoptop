@@ -150,12 +150,12 @@ pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
         },
         .accounts => {},
         .search => {
-            draw.line(prompt_win, "Search:", .{});
-            draw.line(prompt_win, self.search_input.slice(), .{});
+            draw.line(line_window(prompt_win, 0), "Search:", .{});
+            draw.line(line_window(prompt_win, 1), self.search_input.slice(), .{});
         },
         .add_uri => {
-            draw.line(prompt_win, "Add account URI:", .{});
-            draw.line(prompt_win, self.uri_input.slice(), .{});
+            draw.line(line_window(prompt_win, 0), "Add account URI:", .{});
+            draw.line(line_window(prompt_win, 1), self.uri_input.slice(), .{});
         },
         .confirm_delete => {
             const result_position = self.nav.selected orelse return;
@@ -170,9 +170,9 @@ pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
                 .{ account.issuer, account.name },
             ) catch return;
 
-            draw.line(prompt_win, "Delete account?", .{});
-            draw.line(prompt_win, text, .{});
-            draw.line(prompt_win, "Press Enter to delete, Escape to cancel", .{});
+            draw.line(line_window(prompt_win, 0), "Delete account?", .{});
+            draw.line(line_window(prompt_win, 1), text, .{});
+            draw.line(line_window(prompt_win, 2), "Press Enter to delete, Escape to cancel", .{});
         },
     }
 }
