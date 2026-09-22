@@ -48,12 +48,16 @@ pub fn run(
     var app = try App.init(al, io, dir);
     defer app.deinit(al);
 
+    var now = std.Io.Timestamp.now(io, .real).toSeconds();
+    app.last_activity = now;
+
     main_loop: while (true) {
         for (0..64) |_| {
             const event = try loop.tryEvent() orelse break;
 
             switch (event) {
                 .key_press => |key| {
+                    app.last_activity = now;
                     const list_height: usize = if (Layout.calculate(
                         vx.window().width,
                         vx.window().height,
@@ -74,7 +78,7 @@ pub fn run(
             app.dirty = true;
         }
 
-        const now = std.Io.Timestamp.now(io, .real).toSeconds();
+        now = std.Io.Timestamp.now(io, .real).toSeconds();
         if (last_second == null or now != last_second.?) {
             last_second = now;
             dirty = true;
