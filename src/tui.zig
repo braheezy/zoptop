@@ -42,7 +42,6 @@ pub fn run(
     // Sends queries to terminal to detect certain features
     try vx.queryTerminal(tty.writer(), .fromSeconds(1));
 
-    var dirty = true;
     var last_second: ?i64 = null;
 
     var app = try App.init(al, io, dir);
@@ -72,21 +71,23 @@ pub fn run(
                         break :main_loop;
                 },
 
-                .winsize => |ws| try vx.resize(al, tty.writer(), ws),
+                .winsize => |ws| {
+                    app.last_activity = now;
+                    try vx.resize(al, tty.writer(), ws);
+                    app.dirty = true;
+                },
             }
-
-            app.dirty = true;
         }
 
         now = std.Io.Timestamp.now(io, .real).toSeconds();
         if (last_second == null or now != last_second.?) {
             last_second = now;
-            dirty = true;
+            app.dirty = true;
         }
 
         try app.lockOnIdle(al, now);
 
-        if (dirty) {
+        if (app.dirty) {
             const win = vx.window();
             win.clear();
             win.hideCursor();
@@ -105,7 +106,7 @@ pub fn run(
             try tty.writer().flush();
 
             _ = ar.reset(.retain_capacity);
-            dirty = false;
+            app.dirty = false;
         }
 
         try std.Io.sleep(io, .fromMilliseconds(25), .awake);
