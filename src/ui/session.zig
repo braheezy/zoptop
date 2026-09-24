@@ -2,7 +2,7 @@ const std = @import("std");
 const totp = @import("totp");
 const SecretInput = @import("sercret_input.zig").SecretInput;
 
-pub const filename = "accounts";
+pub const filename = "accounts.zoptop";
 
 pub const Session = @This();
 

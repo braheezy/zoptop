@@ -522,7 +522,7 @@ fn handleAddUriKey(
         al,
         io,
         self.session.dir,
-        "accounts",
+        Session.filename,
         self.session.password.slice(),
         temp_accounts.items,
         self.seal_options,
