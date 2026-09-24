@@ -26,6 +26,7 @@ const label_style: vaxis.Style = .{ .fg = .{ .index = 6 }, .bold = true };
 const input_style: vaxis.Style = .{ .fg = .{ .index = 7 }, .bold = true };
 const help_style: vaxis.Style = .{ .fg = .{ .index = 8 } };
 const error_style: vaxis.Style = .{ .fg = .{ .index = 1 }, .bold = true };
+const warning_style: vaxis.Style = .{ .fg = .{ .index = 3 }, .bold = true };
 pub const idle_timeout: i64 = 5 * 60;
 
 fn drawPasswordMask(win: vaxis.Window, row: u16, length: usize) void {
@@ -204,13 +205,13 @@ pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
 
             const text = std.fmt.bufPrint(
                 &text_buffer,
-                "Delete account? {s} / {s}",
+                "{s} / {s}",
                 .{ account.issuer, account.name },
             ) catch return;
 
-            draw.line(line_window(prompt_win, 0), "Delete account?", label_style);
-            draw.line(line_window(prompt_win, 1), text, .{});
-            draw.line(line_window(prompt_win, 2), "Press Enter to delete, Escape to cancel", .{});
+            draw.line(line_window(prompt_win, 0), "Delete this account?", warning_style);
+            draw.line(line_window(prompt_win, 1), text, input_style);
+            draw.line(line_window(prompt_win, 2), "Enter delete   Esc cancel", help_style);
         },
     }
 }
