@@ -504,6 +504,13 @@ fn handleAddUriKey(
     };
     defer new_account.deinit(al);
 
+    for (self.session.accounts()) |account| {
+        if (accountsEqual(account, new_account)) {
+            try self.showError("Account already exists");
+            return;
+        }
+    }
+
     var temp_accounts = try cloneAccountsWithExtra(
         al,
         self.session.accounts(),
@@ -676,6 +683,11 @@ fn statusStyle(kind: Kind) vaxis.Style {
             .fg = .{ .index = 1 },
         },
     };
+}
+
+fn accountsEqual(a: totp.Account, b: totp.Account) bool {
+    return std.mem.eql(u8, a.issuer, b.issuer) and
+        std.mem.eql(u8, a.name, b.name);
 }
 
 fn helpText(screen: Screen) []const u8 {
@@ -977,6 +989,22 @@ test "failed URI save leaves the existing database unchanged" {
     try testing.expectEqual(Screen.add_uri, app.screen);
     try testing.expectEqual(before, app.session.accounts().len);
     try testing.expectEqualStrings("Operation failed", app.status.slice());
+}
+
+test "duplicate URI does not add a second account" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var app = try unlockTestAppWithAccounts(&tmp);
+    defer app.deinit(testing.allocator);
+
+    try press(&app, .{ .codepoint = 'a' });
+    try typeText(&app, "otpauth://totp/Google:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Google");
+    try press(&app, .{ .codepoint = vaxis.Key.enter });
+
+    try testing.expectEqual(Screen.add_uri, app.screen);
+    try testing.expectEqual(@as(usize, 2), app.session.accounts().len);
+    try testing.expectEqualStrings("Account already exists", app.status.slice());
 }
 
 test "delete confirmation escape leaves the database unchanged" {
