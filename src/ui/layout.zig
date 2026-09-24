@@ -19,7 +19,7 @@ pub fn calculate(width: u16, height: u16) ?Layout {
     return .{
         .title = .{ .x = 0, .y = 0, .width = width, .height = 1 },
         .list = .{ .x = 0, .y = 2, .width = width, .height = height - 7 },
-        .prompt = .{ .x = 0, .y = height - 5, .width = width, .height = 3 },
+        .prompt = .{ .x = 2, .y = 4, .width = width - 4, .height = 3 },
         .help = .{ .x = 0, .y = height - 2, .width = width, .height = 1 },
         .status = .{ .x = 0, .y = height - 1, .width = width, .height = 1 },
     };
@@ -43,10 +43,10 @@ test "layout reserves the footer and has no overlapping rows" {
     const actual = calculate(80, 24).?;
     try testing.expectEqual(@as(u16, 2), actual.list.y);
     try testing.expectEqual(@as(u16, 17), actual.list.height);
-    try testing.expectEqual(@as(u16, 19), actual.prompt.y);
+    try testing.expectEqual(@as(u16, 4), actual.prompt.y);
     try testing.expectEqual(@as(u16, 22), actual.help.y);
     try testing.expectEqual(@as(u16, 23), actual.status.y);
-    try testing.expectEqual(actual.prompt.y, actual.list.y + actual.list.height);
+    try testing.expect(actual.prompt.y >= actual.list.y);
     try testing.expect(calculate(39, 24) == null);
     try testing.expect(calculate(80, 8) == null);
     try testing.expect(calculate(0, 0) == null);

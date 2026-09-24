@@ -30,7 +30,7 @@ pub fn drawAccountRow(
 ) void {
     const cols = layout.columns(win.width) orelse return;
     const row_style: vaxis.Style = if (selected)
-        .{ .fg = .{ .index = 0 }, .bg = .{ .index = 7 } }
+        .{ .fg = .{ .index = 15 }, .bg = .{ .index = 4 }, .bold = true }
     else
         .{};
     win.fill((.{ .char = .{ .grapheme = " " }, .style = row_style }));

@@ -21,11 +21,22 @@ pub const Screen = enum {
 };
 
 const normal_style: vaxis.Style = .{};
+const title_style: vaxis.Style = .{ .fg = .{ .index = 6 }, .bold = true };
+const label_style: vaxis.Style = .{ .fg = .{ .index = 6 }, .bold = true };
+const input_style: vaxis.Style = .{ .fg = .{ .index = 7 }, .bold = true };
+const help_style: vaxis.Style = .{ .fg = .{ .index = 8 } };
+const error_style: vaxis.Style = .{ .fg = .{ .index = 1 }, .bold = true };
 pub const idle_timeout: i64 = 5 * 60;
 
 fn drawPasswordMask(win: vaxis.Window, row: u16, length: usize) void {
-    var mask = [_]u8{'*'} ** 1024;
-    draw.line(win.child(.{ .y_off = row, .width = win.width, .height = 1 }), mask[0..length], .{});
+    for (0..length) |column| {
+        draw.line(win.child(.{
+            .x_off = 10 + @as(u16, @intCast(column)),
+            .y_off = row,
+            .width = 1,
+            .height = 1,
+        }), "*", input_style);
+    }
 }
 
 const App = @This();
@@ -108,22 +119,46 @@ pub fn render(
     const list_height: usize = @intCast(layout.list.height);
     self.nav.normalize(self.results.items.len, list_height);
 
-    draw.line(draw.subwindow(win, layout.title), "zoptop", .{});
-    try draw.drawAccountList(
-        arena,
-        draw.subwindow(win, layout.list),
-        self.session.accounts(),
-        self.results.items,
-        self.nav,
-        now,
-    );
+    draw.line(draw.subwindow(win, layout.title), "zoptop", title_style);
+    if (self.screen == .accounts or self.screen == .confirm_delete) {
+        try draw.drawAccountList(
+            arena,
+            draw.subwindow(win, layout.list),
+            self.session.accounts(),
+            self.results.items,
+            self.nav,
+            now,
+        );
+    }
 
     self.drawPrompt(draw.subwindow(win, layout.prompt));
-    // Draw the active help text in layout.help.
-    draw.line(draw.subwindow(win, layout.status), self.status.slice(), statusStyle(self.status.kind));
+    switch (self.screen) {
+        .unlock, .create_password => win.showCursor(
+            layout.prompt.x + 10 + @as(u16, @intCast(self.password_input.len)),
+            layout.prompt.y + 1,
+        ),
+        .create_confirm => win.showCursor(
+            layout.prompt.x + 10 + @as(u16, @intCast(self.confirmation_input.len)),
+            layout.prompt.y + 1,
+        ),
+        .search => win.showCursor(
+            layout.prompt.x + @as(u16, @intCast(self.search_input.len)),
+            layout.prompt.y + 1,
+        ),
+        .add_uri => win.showCursor(
+            layout.prompt.x + @as(u16, @intCast(self.uri_input.len)),
+            layout.prompt.y + 1,
+        ),
+        .accounts, .confirm_delete => {},
+    }
+    draw.line(
+        draw.subwindow(win, layout.status),
+        self.status.slice(),
+        if (self.status.kind == .err) error_style else help_style,
+    );
 
     const help_win = draw.subwindow(win, layout.help);
-    draw.line(help_win, "j/k: move  q: quit", .{});
+    draw.line(help_win, helpText(self.screen), help_style);
 }
 
 pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
@@ -137,24 +172,27 @@ pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
 
     switch (self.screen) {
         .unlock => {
-            draw.line(line_window(prompt_win, 0), "Unlock vault:", .{});
+            draw.line(line_window(prompt_win, 0), "Unlock vault", label_style);
+            draw.line(line_window(prompt_win, 1), "Password: ", help_style);
             drawPasswordMask(prompt_win, 1, self.password_input.len);
         },
         .create_password => {
-            draw.line(line_window(prompt_win, 0), "Create password:", .{});
+            draw.line(line_window(prompt_win, 0), "Create your vault password", label_style);
+            draw.line(line_window(prompt_win, 1), "Password: ", help_style);
             drawPasswordMask(prompt_win, 1, self.password_input.len);
         },
         .create_confirm => {
-            draw.line(line_window(prompt_win, 0), "Confirm password:", .{});
+            draw.line(line_window(prompt_win, 0), "Confirm your vault password", label_style);
+            draw.line(line_window(prompt_win, 1), "Password: ", help_style);
             drawPasswordMask(prompt_win, 1, self.confirmation_input.len);
         },
         .accounts => {},
         .search => {
-            draw.line(line_window(prompt_win, 0), "Search:", .{});
+            draw.line(line_window(prompt_win, 0), "Search accounts", label_style);
             draw.line(line_window(prompt_win, 1), self.search_input.slice(), .{});
         },
         .add_uri => {
-            draw.line(line_window(prompt_win, 0), "Add account URI:", .{});
+            draw.line(line_window(prompt_win, 0), "Add account from otpauth URI", label_style);
             draw.line(line_window(prompt_win, 1), self.uri_input.slice(), .{});
         },
         .confirm_delete => {
@@ -170,7 +208,7 @@ pub fn drawPrompt(self: *App, prompt_win: vaxis.Window) void {
                 .{ account.issuer, account.name },
             ) catch return;
 
-            draw.line(line_window(prompt_win, 0), "Delete account?", .{});
+            draw.line(line_window(prompt_win, 0), "Delete account?", label_style);
             draw.line(line_window(prompt_win, 1), text, .{});
             draw.line(line_window(prompt_win, 2), "Press Enter to delete, Escape to cancel", .{});
         },
@@ -637,6 +675,18 @@ fn statusStyle(kind: Kind) vaxis.Style {
         .err => .{
             .fg = .{ .index = 1 },
         },
+    };
+}
+
+fn helpText(screen: Screen) []const u8 {
+    return switch (screen) {
+        .unlock => "Enter unlocks   Esc clears   q quits",
+        .create_password => "Enter continues   Esc clears   q quits",
+        .create_confirm => "Enter saves   Esc cancels   q quits",
+        .accounts => "j/k move   a add   / search   d delete   l lock   q quit",
+        .search => "Type to filter   Enter keeps search   Esc cancels",
+        .add_uri => "Enter adds account   Esc cancels",
+        .confirm_delete => "Enter deletes   Esc cancels",
     };
 }
 
