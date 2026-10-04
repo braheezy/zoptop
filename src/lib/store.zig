@@ -91,7 +91,7 @@ test "store rejects separators and NUL anywhere in filenames" {
 test "store loads the maximum database plus the 80 byte vault overhead" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    const name = [_]u8{'a'} ** 4077;
+    const name = @as([4077]u8, @splat('a'));
     const accounts = try testing.allocator.alloc(Account, 1024);
     defer testing.allocator.free(accounts);
     for (accounts) |*account| account.* = .{ .issuer = "", .name = &name, .secret = "f" };

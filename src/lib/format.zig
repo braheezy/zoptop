@@ -237,8 +237,8 @@ test "format validates account fields on both encode and decode" {
 }
 
 test "format accepts field limits and rejects one byte over" {
-    const name = [_]u8{'a'} ** 4097;
-    const secret = [_]u8{0xff} ** 1025;
+    const name = @as([4097]u8, @splat('a'));
+    const secret = @as([1025]u8, @splat(0xff));
     const good: Account = .{ .issuer = name[0..4096], .name = name[0..4096], .secret = secret[0..1024], .digits = 8, .period = 0xffffffff };
     const bytes = try encode(testing.allocator, &.{good});
     defer testing.allocator.free(bytes);
@@ -260,7 +260,7 @@ test "format accepts field limits and rejects one byte over" {
 }
 
 test "format accepts exactly 1024 accounts and 4 MiB" {
-    const name = [_]u8{'a'} ** 4077;
+    const name = @as([4077]u8, @splat('a'));
     const accounts = try testing.allocator.alloc(Account, 1025);
     defer testing.allocator.free(accounts);
     for (accounts) |*account| account.* = .{ .issuer = "", .name = &name, .secret = "f" };

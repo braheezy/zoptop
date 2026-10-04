@@ -243,7 +243,7 @@ test "oversized unlock password leaves the session locked" {
     var session: Session = .{ .dir = tmp.dir };
     defer session.deinit(testing.allocator);
 
-    const oversized = [_]u8{'x'} ** 1025;
+    const oversized = @as([1025]u8, @splat('x'));
     try testing.expectError(
         error.InputTooLong,
         session.unlock(testing.allocator, testing.io, &oversized),

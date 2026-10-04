@@ -76,7 +76,7 @@ test "secret input rejects every ASCII control and DEL" {
         const text = [_]u8{ 'a', @intCast(value), 'b' };
         try testing.expectError(error.InvalidText, input.append(&text));
         try testing.expectEqual(@as(usize, 0), input.len);
-        try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &input.bytes);
+        try testing.expectEqualSlices(u8, &(@as([8]u8, @splat(0))), &input.bytes);
     }
 }
 
@@ -85,7 +85,7 @@ test "secret input rejects invalid UTF-8 without copying a prefix" {
         var input: SecretInput(16) = .{};
         try testing.expectError(error.InvalidText, input.append(text));
         try testing.expectEqualStrings("", input.slice());
-        try testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &input.bytes);
+        try testing.expectEqualSlices(u8, &(@as([16]u8, @splat(0))), &input.bytes);
     }
 }
 
@@ -106,7 +106,7 @@ test "secret input backspace on empty is harmless" {
     var input: SecretInput(8) = .{};
     input.backspace();
     try testing.expectEqual(@as(usize, 0), input.len);
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &input.bytes);
+    try testing.expectEqualSlices(u8, &(@as([8]u8, @splat(0))), &input.bytes);
 }
 
 test "secret input backspace removes and wipes complete codepoints" {
@@ -118,14 +118,14 @@ test "secret input backspace removes and wipes complete codepoints" {
     input.len = text.len;
     input.backspace();
     try testing.expectEqualStrings("aé", input.slice());
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 4), input.bytes[3..7]);
+    try testing.expectEqualSlices(u8, &(@as([4]u8, @splat(0))), input.bytes[3..7]);
     input.backspace();
     try testing.expectEqualStrings("a", input.slice());
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 2), input.bytes[1..3]);
+    try testing.expectEqualSlices(u8, &(@as([2]u8, @splat(0))), input.bytes[1..3]);
     input.backspace();
     input.backspace();
     try testing.expectEqualStrings("", input.slice());
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &input.bytes);
+    try testing.expectEqualSlices(u8, &(@as([16]u8, @splat(0))), &input.bytes);
 }
 
 test "secret input clear wipes the entire backing array" {
@@ -136,7 +136,7 @@ test "secret input clear wipes the entire backing array" {
     input.clear();
     try testing.expectEqual(@as(usize, 0), input.len);
     try testing.expectEqualStrings("", input.slice());
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &input.bytes);
+    try testing.expectEqualSlices(u8, &(@as([16]u8, @splat(0))), &input.bytes);
     input.clear();
     try testing.expectEqual(@as(usize, 0), input.len);
 }

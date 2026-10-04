@@ -31,7 +31,7 @@ test "status starts empty" {
     try testing.expectEqual(@as(usize, 0), status.used);
     try testing.expectEqual(Kind.info, status.kind);
     try testing.expectEqualStrings("", status.slice());
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 256), &status.bytes);
+    try testing.expectEqualSlices(u8, &(@as([256]u8, @splat(0))), &status.bytes);
 }
 
 test "status replaces the previous message and kind" {
@@ -56,7 +56,7 @@ test "status owns a copy of the message" {
 
 test "status accepts exactly 256 bytes and an empty message" {
     var status: Status = .{};
-    const message = [_]u8{'x'} ** 256;
+    const message = @as([256]u8, @splat('x'));
     try status.set(&message, .err);
     try testing.expectEqual(@as(usize, 256), status.used);
     try testing.expectEqualStrings(&message, status.slice());
@@ -71,7 +71,7 @@ test "status rejects an oversized message without changing anything" {
     var status: Status = .{};
     try status.set("Keep this error", .err);
     const before = status;
-    const too_long = [_]u8{'x'} ** 257;
+    const too_long = @as([257]u8, @splat('x'));
     try testing.expectError(error.MessageTooLong, status.set(&too_long, .info));
     try testing.expectEqualStrings("Keep this error", status.slice());
     try testing.expectEqual(before.used, status.used);

@@ -43,7 +43,7 @@ test "format pads codes with leading zeros" {
 }
 
 test "format returns the used part of the caller's buffer" {
-    var buffer = [_]u8{'!'} ** 10;
+    var buffer = @as([10]u8, @splat('!'));
     const actual = try format(42, 6, &buffer);
     try testing.expectEqualStrings("000042", actual);
     try testing.expect(actual.ptr == buffer[0..].ptr);

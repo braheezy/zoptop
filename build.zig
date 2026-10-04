@@ -33,9 +33,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
 
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     const library_tests = b.addTest(.{ .root_module = mod });
     const run_library_tests = b.addRunArtifact(library_tests);
